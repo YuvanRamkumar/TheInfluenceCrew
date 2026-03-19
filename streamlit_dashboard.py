@@ -1706,6 +1706,234 @@ with tabs[9]:
 
 
 # ═══════════════════════════════════════════════
+# TAB 11: EXPORT & PDF REPORT
+# ═══════════════════════════════════════════════
+with tabs[10]:
+    st.markdown('<div class="section-head">📥 Export Data & Generate PDF Report</div>', unsafe_allow_html=True)
+    st.caption("Download filtered data as CSV or generate an auto-formatted PDF summary report.")
+
+    exp_col1, exp_col2 = st.columns(2)
+
+    with exp_col1:
+        st.markdown("#### 📁 CSV Data Export")
+        # Columns to export
+        export_cols = [c for c in ['age_group', 'gender', 'spending', 'platforms', 'daily_time',
+                                    'follows_influencers', 'trust_factor', 'engagement_freq',
+                                    'product_interest_score', 'purchase_freq', 'satisfaction_score',
+                                    'ad_click_freq', 'ad_influenced', 'retargeting_score',
+                                    'preferred_ad_format', 'purchase_ord', 'engagement_ord',
+                                    'spending_ord', 'made_purchase', 'high_ad_responsive'] if c in filtered.columns]
+        export_df = filtered[export_cols].copy()
+
+        csv_data = export_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="⬇️ Download Filtered Dataset (CSV)",
+            data=csv_data,
+            file_name=f"influence_crew_filtered_{n_filtered}respondents.csv",
+            mime='text/csv',
+            use_container_width=True
+        )
+        st.caption(f"Exporting {n_filtered} respondents × {len(export_cols)} columns")
+
+        # Export summary stats
+        summary_stats = export_df.describe().round(3)
+        summary_csv = summary_stats.to_csv().encode('utf-8')
+        st.download_button(
+            label="⬇️ Download Summary Statistics (CSV)",
+            data=summary_csv,
+            file_name="influence_crew_summary_stats.csv",
+            mime='text/csv',
+            use_container_width=True
+        )
+
+        # Export correlation matrix
+        num_export_cols = [c for c in ['spending_ord', 'daily_time_ord', 'engagement_ord',
+                                        'product_interest_score', 'purchase_ord', 'satisfaction_score',
+                                        'ad_click_ord', 'retargeting_score'] if c in filtered.columns]
+        if len(num_export_cols) >= 2:
+            corr_export = filtered[num_export_cols].corr(method='spearman').round(3)
+            corr_csv = corr_export.to_csv().encode('utf-8')
+            st.download_button(
+                label="⬇️ Download Correlation Matrix (CSV)",
+                data=corr_csv,
+                file_name="influence_crew_correlation_matrix.csv",
+                mime='text/csv',
+                use_container_width=True
+            )
+
+    with exp_col2:
+        st.markdown("#### 📄 PDF Report Generator")
+
+        if st.button("🖨️ Generate PDF Report", use_container_width=True, type="primary"):
+            try:
+                from fpdf import FPDF
+
+                class ReportPDF(FPDF):
+                    def header(self):
+                        self.set_font('Helvetica', 'B', 14)
+                        self.set_text_color(124, 92, 252)
+                        self.cell(0, 10, 'The Influence Crew - Business Analytics Report', align='C', new_x='LMARGIN', new_y='NEXT')
+                        self.set_font('Helvetica', '', 9)
+                        self.set_text_color(120, 120, 160)
+                        self.cell(0, 7, 'Group 5 | Survey n=210 | Dec 2025', align='C', new_x='LMARGIN', new_y='NEXT')
+
+                        self.ln(3)
+
+                    def footer(self):
+                        self.set_y(-15)
+                        self.set_font('Helvetica', 'I', 8)
+                        self.set_text_color(150, 150, 180)
+                        self.cell(0, 10, f'Page {self.page_no()}', align='C')
+
+                    def _clean(self, text):
+                        if not text: return ""
+                        return str(text).replace('—', '-').replace('→', '->').replace('≥', '>=').replace('≤', '<=').replace('₹', 'Rs.').replace('✓', 'V ').replace('·', '*').replace('â', 'a').replace('€', 'E')
+
+
+                    def section(self, title):
+                        self.set_font('Helvetica', 'B', 11)
+                        self.set_text_color(124, 92, 252)
+                        self.cell(0, 8, self._clean(title), new_x='LMARGIN', new_y='NEXT')
+                        self.set_draw_color(124, 92, 252)
+                        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+                        self.ln(3)
+                        self.set_text_color(30, 30, 30)
+
+                    def kpi_row(self, label, value, note=''):
+                        self.set_font('Helvetica', 'B', 10)
+                        self.set_text_color(30, 30, 30)
+                        self.cell(70, 7, self._clean(label) + ':', new_x='RIGHT', new_y='LAST')
+                        self.set_font('Helvetica', '', 10)
+                        self.cell(60, 7, self._clean(value), new_x='RIGHT', new_y='LAST')
+                        self.set_font('Helvetica', 'I', 9)
+                        self.set_text_color(100, 100, 140)
+                        self.cell(0, 7, self._clean(note), new_x='LMARGIN', new_y='NEXT')
+                        self.set_text_color(30, 30, 30)
+
+
+                pdf = ReportPDF()
+                pdf.set_auto_page_break(auto=True, margin=15)
+                pdf.add_page()
+
+                # ── Cover info ──
+                pdf.section("1. Dataset & Filter Summary")
+                pdf.kpi_row("Total Respondents (Filtered)", str(n_filtered), f"of 210 total")
+                pdf.kpi_row("Purchase Rate", f"{purchase_rate:.1f}%", "made ≥1 influencer-driven purchase")
+                avg_interest_pdf = filtered['product_interest_score'].mean() if n_filtered > 0 else 0
+                avg_sat_pdf = filtered['satisfaction_score'].mean() if n_filtered > 0 else 0
+                pdf.kpi_row("Avg Product Interest Score", f"{avg_interest_pdf:.2f}/5")
+                pdf.kpi_row("Avg Satisfaction Score", f"{avg_sat_pdf:.2f}/5")
+                pdf.kpi_row("Ad Responsiveness Rate", f"{ad_responsive_rate:.1f}%", "click ads sometimes or more")
+                top_trust_pdf = filtered['trust_factor'].value_counts().index[0] if n_filtered > 0 else 'N/A'
+                pdf.kpi_row("Top Trust Driver", top_trust_pdf)
+                top_plat_pdf = max(['Instagram','YouTube','Pinterest','Snapchat','Facebook'],
+                                   key=lambda p: filtered[f'platform_{p.lower()}'].sum() if f'platform_{p.lower()}' in filtered.columns else 0)
+                pdf.kpi_row("Most Used Platform", top_plat_pdf)
+                pdf.ln(4)
+
+                # ── Correlation insights ──
+                pdf.section("2. Top Correlation Insights (Spearman, vs Purchase Frequency)")
+                num_pdf = [c for c in ['spending_ord','daily_time_ord','engagement_ord','product_interest_score',
+                                        'satisfaction_score','ad_click_ord','retargeting_score'] if c in filtered.columns]
+                label_pdf = {'spending_ord':'Monthly Spending','daily_time_ord':'Daily Time',
+                             'engagement_ord':'Engagement','product_interest_score':'Product Interest',
+                             'satisfaction_score':'Satisfaction','ad_click_ord':'Ad Clicks',
+                             'retargeting_score':'Retargeting Receptivity'}
+                if 'purchase_ord' in filtered.columns and len(num_pdf) >= 2:
+                    for col_p in num_pdf:
+                        try:
+                            from scipy.stats import spearmanr as spr
+                            rho_p, pv_p = spr(filtered[col_p].dropna(), filtered.loc[filtered[col_p].notna(), 'purchase_ord'])
+                            sig = "✓ Sig." if pv_p < 0.05 else ""
+                            pdf.kpi_row(label_pdf.get(col_p, col_p), f"ρ = {rho_p:.3f}  (p={pv_p:.4f})", sig)
+                        except Exception:
+                            pass
+                pdf.ln(4)
+
+                # ── Association rules ──
+                pdf.section("3. Top Association Rules (→ Made Purchase)")
+                pdf.set_font('Helvetica', '', 9)
+                try:
+                    pdf.cell(55, 7, 'Antecedent', border=1, new_x='RIGHT', new_y='LAST')
+                    pdf.cell(30, 7, 'Support', border=1, new_x='RIGHT', new_y='LAST')
+                    pdf.cell(32, 7, 'Confidence', border=1, new_x='RIGHT', new_y='LAST')
+                    pdf.cell(30, 7, 'Lift', border=1, new_x='LMARGIN', new_y='NEXT')
+                    t_df_pdf = pd.DataFrame({
+                        'High_Engagement': (filtered['engagement_ord'] >= 2).astype(int),
+                        'ContentQuality_Trust': (filtered['trust_factor'] == 'Content quality').astype(int),
+                        'High_Interest': (filtered['product_interest_score'] >= 4).astype(int),
+                        'High_Satisfaction': (filtered['satisfaction_score'] >= 4).astype(int),
+                        'Made_Purchase': (filtered['purchase_ord'] > 0).astype(int),
+                        'High_TimeSpent': (filtered['daily_time_ord'] >= 3).astype(int),
+                    }).fillna(0).astype(int)
+                    def _rules_pdf(df_t, ants, cons, ms=0.06, mc=0.45):
+                        n_r = len(df_t); rules_r = []; cr = df_t[cons].sum()/n_r
+                        for col_r in ants:
+                            if col_r == cons: continue
+                            ant_r = df_t[col_r]; both_r = (ant_r==1)&(df_t[cons]==1)
+                            sup_r = both_r.sum()/n_r
+                            if sup_r < ms or ant_r.sum()==0: continue
+                            conf_r = both_r.sum()/ant_r.sum()
+                            if conf_r < mc: continue
+                            lift_r = conf_r/cr if cr>0 else 0
+                            rules_r.append({'A': col_r, 'Sup': round(sup_r,3), 'Conf': round(conf_r,3), 'Lift': round(lift_r,3)})
+                        return sorted(rules_r, key=lambda x: -x['Lift'])
+                    ants_pdf = [c for c in t_df_pdf.columns if c != 'Made_Purchase']
+                    top_rules_pdf = _rules_pdf(t_df_pdf, ants_pdf, 'Made_Purchase')[:6]
+                    for rr in top_rules_pdf:
+                        pdf.cell(55, 6, rr['A'][:28], border=1, new_x='RIGHT', new_y='LAST')
+                        pdf.cell(30, 6, str(rr['Sup']), border=1, new_x='RIGHT', new_y='LAST')
+                        pdf.cell(32, 6, str(rr['Conf']), border=1, new_x='RIGHT', new_y='LAST')
+                        pdf.cell(30, 6, str(rr['Lift']), border=1, new_x='LMARGIN', new_y='NEXT')
+                except Exception:
+                    pdf.cell(0, 7, "Rules unavailable for current filter.", new_x='LMARGIN', new_y='NEXT')
+                pdf.ln(4)
+
+                # ── Recommendations ──
+                pdf.section("4. Strategic Recommendations")
+                rec_texts = [
+                    ("01 - Influencer Selection", "Prioritise content quality over follower count. Top trust driver: " + top_trust_pdf),
+                    ("02 - Campaign Design", f"Reels-first strategy: {reels_pct:.1f}% prefer Reels as most influential ad format."),
+                    ("03 - Conversion Optimization", "Combine authentic reviews (70%) with unique coupon codes (30%) per influencer brief."),
+                    ("04 - Ad Budget Strategy", f"Cap retargeting at 3-4 impressions/user/week. {100-ad_responsive_rate:.1f}% rarely/never click ads."),
+                    ("05 - Risk Mitigation", "Implement Engagement Quality Score (EQS) = (Comments+Saves)/Reach. Require EQS >= 2%."),
+                ]
+
+                for rtitle, rdesc in rec_texts:
+                    pdf.set_font('Helvetica', 'B', 10)
+                    pdf.set_text_color(124, 92, 252)
+                    pdf.cell(0, 7, rtitle, new_x='LMARGIN', new_y='NEXT')
+                    pdf.set_font('Helvetica', '', 9)
+                    pdf.set_text_color(40, 40, 60)
+                    pdf.multi_cell(0, 6, rdesc)
+                    pdf.ln(2)
+
+                pdf_bytes = bytes(pdf.output())
+                st.download_button(
+                    label="⬇️ Download PDF Report",
+                    data=pdf_bytes,
+                    file_name="TheInfluenceCrew_Analytics_Report.pdf",
+                    mime='application/pdf',
+                    use_container_width=True,
+                )
+                st.success("✅ PDF generated successfully! Click above to download.")
+
+            except ImportError:
+                st.error("⚠️ `fpdf2` not installed. Run: `pip install fpdf2`")
+            except Exception as ex:
+                st.error(f"PDF generation error: {ex}")
+
+    # Preview section
+    st.markdown('<div class="section-head">👁️ Filtered Data Preview</div>', unsafe_allow_html=True)
+    preview_cols = [c for c in ['age_group', 'gender', 'spending', 'trust_factor',
+                                 'purchase_freq', 'engagement_freq', 'preferred_ad_format',
+                                 'satisfaction_score', 'made_purchase'] if c in filtered.columns]
+    st.dataframe(filtered[preview_cols].head(50).style.background_gradient(
+        cmap='plasma', subset=[c for c in ['satisfaction_score'] if c in preview_cols]),
+        use_container_width=True)
+    st.caption(f"Showing first 50 of {n_filtered} filtered respondents.")
+
+
 # TAB 6: RECOMMENDATIONS
 # ═══════════════════════════════════════════════
 with tabs[6]:
