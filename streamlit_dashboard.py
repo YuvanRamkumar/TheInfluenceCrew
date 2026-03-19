@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
 from sklearn.preprocessing import StandardScaler
+
+print("🚀 INFLUENCE CREW DASHBOARD: STARTING UP...")
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.ensemble import RandomForestClassifier
@@ -758,6 +760,7 @@ with tabs[3]:
     # Compute rules
     def compute_rules(df_t, antecedents, consequent, min_sup=0.08, min_conf=0.5):
         n = len(df_t)
+        if n == 0: return pd.DataFrame() # Defensive check
         rules = []
         cons = df_t[consequent]
         cons_rate = cons.sum() / n
@@ -803,10 +806,14 @@ with tabs[3]:
         min_conf = st.slider("Min Confidence", 0.3, 0.9, 0.5, 0.05)
         min_sup = st.slider("Min Support", 0.05, 0.4, 0.08, 0.01)
 
-    antecedent_list = [c for c in t_df.columns if c != target_rule]
-    rules_df = compute_rules(t_df, antecedent_list, target_rule, min_sup=min_sup, min_conf=min_conf)
+    if n_filtered < 10:
+        st.warning("Not enough data points for pattern mining (requires filters to overlap).")
+        rules_df = pd.DataFrame()
+    else:
+        antecedent_list = [c for c in t_df.columns if c != target_rule]
+        rules_df = compute_rules(t_df, antecedent_list, target_rule, min_sup=min_sup, min_conf=min_conf)
 
-    if rules_df.empty:
+    if n_filtered >= 10 and rules_df.empty:
         st.info("No rules found at current thresholds. Try lowering minimum support/confidence.")
     else:
         with col_r2:
