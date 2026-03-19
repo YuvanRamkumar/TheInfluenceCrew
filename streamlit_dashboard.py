@@ -140,7 +140,7 @@ def load_data():
     for path in candidates:
         if os.path.exists(path):
             try:
-                df = pd.read_excel(path)
+                df = pd.read_excel(path, engine='openpyxl')
                 break
             except:
                 continue
@@ -200,6 +200,9 @@ def load_data():
 
 @st.cache_data
 def preprocess(df_raw):
+    # Standardize column names (strip whitespace and handle newlines)
+    df_raw.columns = [str(c).replace('\r', '').replace('\n', '').strip() for c in df_raw.columns]
+    
     col_map = {
         'Age Group': 'age_group',
         'Gender': 'gender',
@@ -220,7 +223,21 @@ def preprocess(df_raw):
         '. How likely are you to buy a product after seeing repeated ads for it (retargeting)?': 'retargeting_score',
         'Which ad format influences you the most?': 'preferred_ad_format',
     }
-    df = df_raw.rename(columns={k: v for k, v in col_map.items() if k in df_raw.columns})
+    
+    # Flexible mapping: try to find column even if it has slight differences
+    available_cols = list(df_raw.columns)
+    actual_rename = {}
+    for k, v in col_map.items():
+        if k in available_cols:
+            actual_rename[k] = v
+        else:
+            # Try fuzzy match (prefix)
+            for col in available_cols:
+                if str(col).startswith(k[:20]):
+                    actual_rename[col] = v
+                    break
+                    
+    df = df_raw.rename(columns=actual_rename)
     
     spending_map = {'< ₹500': 1, '₹500–₹2000': 2, '₹2000–₹5000': 3, '₹5000+': 4}
     time_map = {'Less than 1 hour': 1, '1-2 hour': 2, '2-4 hour': 3, 'More than 4 hours': 4}
@@ -229,11 +246,11 @@ def preprocess(df_raw):
     adclick_map = {'Never': 0, 'Rarely': 1, 'Sometimes': 2, 'Frequently': 3}
     age_map = {'13-18': 1, '19-24': 2, '25-30': 3, '31-40': 4, '40': 5, '40+': 5}
 
-    df['spending_ord'] = df['spending'].map(spending_map) if 'spending' in df.columns else 2
-    df['daily_time_ord'] = df['daily_time'].map(time_map) if 'daily_time' in df.columns else 2
-    df['engagement_ord'] = df['engagement_freq'].map(engage_map) if 'engagement_freq' in df.columns else 2
-    df['purchase_ord'] = df['purchase_freq'].map(purchase_map) if 'purchase_freq' in df.columns else 1
-    df['ad_click_ord'] = df['ad_click_freq'].map(adclick_map) if 'ad_click_freq' in df.columns else 1
+    df['spending_ord'] = df['spending'].map(spending_map).fillna(2) if 'spending' in df.columns else 2
+    df['daily_time_ord'] = df['daily_time'].map(time_map).fillna(2) if 'daily_time' in df.columns else 2
+    df['engagement_ord'] = df['engagement_freq'].map(engage_map).fillna(2) if 'engagement_freq' in df.columns else 2
+    df['purchase_ord'] = df['purchase_freq'].map(purchase_map).fillna(1) if 'purchase_freq' in df.columns else 1
+    df['ad_click_ord'] = df['ad_click_freq'].map(adclick_map).fillna(1) if 'ad_click_freq' in df.columns else 1
     df['age_ord'] = df['age_group'].map(age_map).fillna(2) if 'age_group' in df.columns else 2
     df['searched_binary'] = (df['searched_product'] == 'Yes').astype(int) if 'searched_product' in df.columns else 1
     df['ad_influenced_binary'] = df['ad_influenced'].map({'Yes': 1, 'Not sure': 0.5, 'No': 0}).fillna(0.5) if 'ad_influenced' in df.columns else 0.5
@@ -286,21 +303,22 @@ with st.sidebar:
 
     st.markdown("**Demographics**")
     
-    age_options = sorted(df['age_group'].dropna().unique().tolist())
+    age_options = sorted(df['age_group'].dropna().unique().tolist()) if 'age_group' in df.columns else []
     selected_ages = st.multiselect("Age Group", age_options, default=age_options,
                                    help="Filter by age group")
 
-    gender_options = sorted(df['gender'].dropna().unique().tolist())
+    gender_options = sorted(df['gender'].dropna().unique().tolist()) if 'gender' in df.columns else []
     selected_genders = st.multiselect("Gender", gender_options, default=gender_options)
 
     spending_options = ['< ₹500', '₹500–₹2000', '₹2000–₹5000', '₹5000+']
-    spending_options = [s for s in spending_options if s in df['spending'].values]
+    if 'spending' in df.columns:
+        spending_options = [s for s in spending_options if s in df['spending'].values]
     selected_spending = st.multiselect("Spending Range", spending_options, default=spending_options)
 
     st.markdown("---")
     st.markdown("**Behavior Filters**")
 
-    trust_options = sorted(df['trust_factor'].dropna().unique().tolist())
+    trust_options = sorted(df['trust_factor'].dropna().unique().tolist()) if 'trust_factor' in df.columns else []
     selected_trust = st.multiselect("Trust Driver", trust_options, default=trust_options)
 
     platform_options = ['Instagram', 'YouTube', 'Pinterest', 'Snapchat', 'Facebook']
@@ -869,29 +887,24 @@ with tabs[4]:
 
     @st.cache_data
     def build_bipartite_network(trust_series, motiv_series):
-        trust_series = pd.Series(trust_series)   # ← ADD THIS LINE
-        motiv_series = pd.Series(motiv_series)   # ← ADD THIS LINE
-        all_motivs = []
-        for row in motiv_series.dropna():
-            for m in row.split(';'):
-                m = m.strip()
-                if m and m != 'nan': all_motivs.append(m)
-        trust_nodes = trust_series.dropna().unique().tolist()
-        motiv_nodes = list(set(all_motivs))
         B = nx.Graph()
-        B.add_nodes_from(trust_nodes, bipartite=0)
-        B.add_nodes_from(motiv_nodes, bipartite=1)
-        combined = pd.concat([trust_series.rename('trust'), motiv_series.rename('motiv')], axis=1)
-        for _, row in combined.iterrows():
-            t = str(row.get('trust','')).strip()
-            raw = str(row.get('motiv',''))
+        t_nodes = set()
+        m_nodes = set()
+        edges = Counter()
+        for t, m_raw in zip(trust_series, motiv_series):
+            t = str(t).strip()
             if not t or t == 'nan': continue
-            for m in raw.split(';'):
+            t_nodes.add(t)
+            for m in str(m_raw).split(';'):
                 m = m.strip()
                 if m and m != 'nan':
-                    if B.has_edge(t, m): B[t][m]['weight'] += 1
-                    else: B.add_edge(t, m, weight=1)
-        return B, trust_nodes, motiv_nodes
+                    m_nodes.add(m)
+                    edges[(t, m)] += 1
+        B.add_nodes_from(list(t_nodes), bipartite=0)
+        B.add_nodes_from(list(m_nodes), bipartite=1)
+        for (u, v), w in edges.items():
+            B.add_edge(u, v, weight=w)
+        return B, list(t_nodes), list(m_nodes)
 
     @st.cache_data
     def build_content_network(content_series, purchase_series):
@@ -996,7 +1009,7 @@ with tabs[4]:
         # ── BIPARTITE: TRUST ↔ MOTIVATION ──────────────────────────────
         elif sna_type == "Trust ↔ Motivation Bipartite":
             B, t_nodes, m_nodes = build_bipartite_network(
-                filtered['trust_factor'].dropna().tolist(),
+                filtered['trust_factor'].tolist(),
                 filtered['purchase_motivation'].fillna('').tolist())
 
             if len(B.nodes()) < 3:

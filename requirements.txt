@@ -7,4 +7,3 @@ scipy
 openpyxl
 streamlit
 networkx
-watchdog
