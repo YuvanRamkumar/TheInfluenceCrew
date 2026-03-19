@@ -1,5 +1,6 @@
-# TheInfluenceCrew — Deployment Requirements
+# TheInfluenceCrew - Deployment Requirements
 # Updated for compatibility with Streamlit Cloud (Python 3.12)
+
 
 pandas>=2.1.4,<3.0.0
 numpy>=1.26.4,<2.1.0
@@ -9,5 +10,10 @@ scikit-learn>=1.4.2,<1.7.0
 scipy>=1.13.1
 openpyxl>=3.1.5
 streamlit>=1.32.0
-networkx>=3.0
+networkx>=3.4.2
 watchdog
+wordcloud>=1.9.6
+fpdf2>=2.8.7
+
+
+

@@ -388,7 +388,8 @@ st.markdown("---")
 # TABS
 # ─────────────────────────────────────────────
 tabs = st.tabs(["📊 Overview", "🔗 Factor Analysis", "🤖 Predictions", 
-                 "⛏️ Pattern Mining", "🕸️ Network Analysis", "📈 Trends & PCA", "🏆 Recommendations"])
+                 "⛏️ Pattern Mining", "🕸️ Network Analysis", "📈 Trends & PCA", "🏆 Recommendations",
+                 "🧩 Clustering", "💰 ROI Simulator", "☁️ Text Analytics", "📥 Export"])
 
 # ═══════════════════════════════════════════════
 # TAB 1: OVERVIEW
@@ -1326,7 +1327,725 @@ with tabs[5]:
         st.pyplot(fig, use_container_width=True)
         plt.close()
 
+    # ── COHORT TREND SIMULATION ───────────────────────────────────────────
+    st.markdown('<div class="section-head">📅 Cohort Trend Simulation — Spending → Engagement → Purchase</div>', unsafe_allow_html=True)
+    st.caption("Each spending cohort shows how engagement translates to purchase behavior — simulating the consumer journey.")
+
+    cohort_spending_order = ['< ₹500', '₹500–₹2000', '₹2000–₹5000', '₹5000+']
+    cohort_spending_present = [s for s in cohort_spending_order if s in filtered['spending'].values]
+
+    if len(cohort_spending_present) >= 2 and n_filtered >= 20:
+        cohort_rows = []
+        for spen in cohort_spending_present:
+            cohort = filtered[filtered['spending'] == spen]
+            cohort_rows.append({
+                'Cohort': spen,
+                'Count': len(cohort),
+                'Avg Engagement': cohort['engagement_ord'].mean(),
+                'Purchase Rate (%)': cohort['made_purchase'].mean() * 100,
+                'Avg Satisfaction': cohort['satisfaction_score'].mean() if 'satisfaction_score' in cohort else 0,
+                'Ad Click Rate (%)': cohort['high_ad_responsive'].mean() * 100,
+                'Avg Interest': cohort['product_interest_score'].mean() if 'product_interest_score' in cohort else 0,
+            })
+        cohort_df = pd.DataFrame(cohort_rows)
+
+        fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+        fig.suptitle('Consumer Journey by Spending Cohort', fontweight='bold', fontsize=12)
+
+        # Chart 1: Purchase Rate by cohort
+        bars = axes[0].bar(cohort_df['Cohort'], cohort_df['Purchase Rate (%)'],
+                           color=PALETTE[:len(cohort_df)], edgecolor='#0a0a0f')
+        axes[0].set_title('Purchase Rate (%) by Cohort', fontweight='bold')
+        axes[0].set_ylabel('Purchase Rate (%)')
+        axes[0].bar_label(bars, fmt='%.1f%%', fontsize=9, padding=2)
+        axes[0].tick_params(axis='x', rotation=20)
+
+        # Chart 2: Engagement vs Purchase scatter (cohort trend line)
+        for i, row in cohort_df.iterrows():
+            axes[1].scatter(row['Avg Engagement'], row['Purchase Rate (%)'],
+                            s=row['Count'] * 2.5, c=PALETTE[i % len(PALETTE)],
+                            alpha=0.85, label=row['Cohort'], zorder=5, edgecolors='white', linewidths=0.5)
+        axes[1].set_xlabel('Avg Engagement Frequency')
+        axes[1].set_ylabel('Purchase Rate (%)')
+        axes[1].set_title('Engagement vs Purchase Rate\n(bubble size = cohort size)', fontweight='bold')
+        axes[1].legend(fontsize=7.5)
+
+        # Chart 3: Stacked comparison — Avg Interest + Avg Satisfaction
+        x = np.arange(len(cohort_df))
+        w = 0.35
+        b1 = axes[2].bar(x - w/2, cohort_df['Avg Interest'], w, label='Avg Interest', color=PALETTE[0], alpha=0.85)
+        b2 = axes[2].bar(x + w/2, cohort_df['Avg Satisfaction'], w, label='Avg Satisfaction', color=PALETTE[2], alpha=0.85)
+        axes[2].set_xticks(x)
+        axes[2].set_xticklabels(cohort_df['Cohort'], rotation=20, fontsize=8)
+        axes[2].set_title('Interest & Satisfaction\nby Spending Cohort', fontweight='bold')
+        axes[2].set_ylabel('Score (1–5)')
+        axes[2].legend(fontsize=9)
+        axes[2].bar_label(b1, fmt='%.2f', fontsize=8, padding=2)
+        axes[2].bar_label(b2, fmt='%.2f', fontsize=8, padding=2)
+
+        plt.tight_layout()
+        st.pyplot(fig, use_container_width=True)
+        plt.close()
+
+        st.markdown("**Cohort Summary Table**")
+        st.dataframe(cohort_df.style.background_gradient(
+            cmap='plasma', subset=['Purchase Rate (%)', 'Ad Click Rate (%)']).format({
+            'Avg Engagement': '{:.2f}', 'Purchase Rate (%)': '{:.1f}%',
+            'Avg Satisfaction': '{:.2f}', 'Ad Click Rate (%)': '{:.1f}%',
+            'Avg Interest': '{:.2f}'
+        }), use_container_width=True)
+
+        # Platform-wise regression trend
+        st.markdown('<div class="section-head">Platform-Wise Regression: Daily Time → Purchase Frequency</div>', unsafe_allow_html=True)
+
+        plat_list = ['Instagram', 'YouTube', 'Pinterest', 'Snapchat', 'Facebook']
+        plat_results = []
+        for plat in plat_list:
+            col_p = f'platform_{plat.lower()}'
+            if col_p in filtered.columns:
+                sub = filtered[filtered[col_p] == 1][['daily_time_ord', 'purchase_ord']].dropna()
+                if len(sub) >= 10:
+                    from sklearn.linear_model import LinearRegression as LR
+                    lrp = LR()
+                    lrp.fit(sub[['daily_time_ord']], sub['purchase_ord'])
+                    r2p = lrp.score(sub[['daily_time_ord']], sub['purchase_ord'])
+                    plat_results.append({
+                        'Platform': plat,
+                        'Users': len(sub),
+                        'Slope (Effect)': round(lrp.coef_[0], 3),
+                        'Intercept': round(lrp.intercept_, 3),
+                        'R²': round(r2p, 3),
+                    })
+
+        if plat_results:
+            plat_reg_df = pd.DataFrame(plat_results).sort_values('Slope (Effect)', ascending=False)
+            fig, ax = plt.subplots(figsize=(10, 4))
+            bar_colors = [PALETTE[i % len(PALETTE)] for i in range(len(plat_reg_df))]
+            bars = ax.bar(plat_reg_df['Platform'], plat_reg_df['Slope (Effect)'],
+                          color=bar_colors, edgecolor='#0a0a0f', alpha=0.88)
+            ax.axhline(0, color='white', linewidth=1.2, linestyle='--', alpha=0.6)
+            ax.set_title('Regression Slope: Daily Time Spent → Purchase Frequency\n(by Platform Users)',
+                         fontweight='bold')
+            ax.set_ylabel('Slope (Effect Size)')
+            ax.bar_label(bars, fmt='%.3f', fontsize=10, padding=3)
+            for i, row in plat_reg_df.iterrows():
+                ax.text(list(plat_reg_df['Platform']).index(row['Platform']),
+                        row['Slope (Effect)'] + (0.005 if row['Slope (Effect)'] >= 0 else -0.015),
+                        f"R²={row['R²']:.3f}\nn={row['Users']}",
+                        ha='center', va='bottom', fontsize=7.5, color='#aaaacc')
+            st.pyplot(fig, use_container_width=True)
+            plt.close()
+    else:
+        st.info("Not enough cohort data in the current filter selection. Widen filters to see cohort trends.")
+
+
 # ═══════════════════════════════════════════════
+# TAB 9: ROI SIMULATOR
+# ═══════════════════════════════════════════════
+with tabs[8]:
+    st.markdown('<div class="section-head">💰 Influencer ROI Simulator</div>', unsafe_allow_html=True)
+    st.caption("Estimate campaign ROI based on influencer type, platform, and budget. Values derived from survey benchmarks.")
+
+    # Survey-derived benchmarks
+    BENCHMARKS = {
+        'Nano (1K–10K)':   {'cpm': 80,   'ctr': 0.038, 'cvr': 0.052},
+        'Micro (10K–100K)':{'cpm': 140,  'ctr': 0.028, 'cvr': 0.041},
+        'Macro (100K–1M)': {'cpm': 320,  'ctr': 0.018, 'cvr': 0.029},
+        'Mega (1M+)':      {'cpm': 900,  'ctr': 0.009, 'cvr': 0.015},
+    }
+    PLATFORM_MULTIPLIERS = {
+        'Instagram Reels': {'reach': 1.25, 'ctr': 1.30, 'cpm_mult': 1.10},
+        'YouTube':         {'reach': 1.10, 'ctr': 1.10, 'cpm_mult': 1.05},
+        'Instagram Feed':  {'reach': 0.90, 'ctr': 0.85, 'cpm_mult': 0.95},
+        'Stories':         {'reach': 0.75, 'ctr': 0.70, 'cpm_mult': 0.80},
+        'Snapchat':        {'reach': 0.65, 'ctr': 0.60, 'cpm_mult': 0.75},
+    }
+
+    # Survey-derived ad click rate for the current filtered dataset
+    survey_ctr = filtered['high_ad_responsive'].mean() if n_filtered > 0 else 0.21
+    survey_purchase_rate = filtered['made_purchase'].mean() if n_filtered > 0 else 0.757
+
+    col_inp1, col_inp2, col_inp3 = st.columns(3)
+    with col_inp1:
+        budget = st.number_input("Campaign Budget (₹)", min_value=5000, max_value=5000000,
+                                 value=100000, step=5000, format="%d")
+        influencer_type = st.selectbox("Influencer Type", list(BENCHMARKS.keys()))
+        aov = st.number_input("Avg Order Value — AOV (₹)", min_value=100, max_value=50000, value=1200, step=100)
+    with col_inp2:
+        platform = st.selectbox("Primary Platform", list(PLATFORM_MULTIPLIERS.keys()))
+        num_influencers = st.slider("Number of Influencers", 1, 20, 3)
+        commission_pct = st.slider("Influencer Commission (% of budget)", 10, 80, 40) / 100
+    with col_inp3:
+        retargeting_pct = st.slider("Retargeting Budget Allocation (%)", 0, 50, 20) / 100
+        funnel_dropoff = st.slider("Funnel Drop-off Adjustment (%)", 0, 50, 15) / 100
+        # Actual purchase rate from survey
+        st.metric("Survey Purchase Rate", f"{survey_purchase_rate*100:.1f}%", "From filtered data")
+
+    st.markdown("---")
+
+    bench = BENCHMARKS[influencer_type]
+    plat = PLATFORM_MULTIPLIERS[platform]
+
+    # Calculations
+    content_budget = budget * commission_pct
+    ad_budget = budget * retargeting_pct
+    other_budget = budget * (1 - commission_pct - retargeting_pct)
+
+    cpm_eff = bench['cpm'] * plat['cpm_mult']
+    reach = (content_budget / cpm_eff) * 1000 * plat['reach']
+    clicks = reach * bench['ctr'] * plat['ctr']
+    conversions = clicks * bench['cvr'] * (1 - funnel_dropoff)
+    # Add retargeting conversions
+    retarg_reach = (ad_budget / (cpm_eff * 0.6)) * 1000 if ad_budget > 0 else 0
+    retarg_conversions = retarg_reach * bench['ctr'] * 0.7 * bench['cvr'] * (1 - funnel_dropoff)
+    total_conversions = conversions + retarg_conversions
+    revenue = total_conversions * aov
+    roi = ((revenue - budget) / budget) * 100 if budget > 0 else 0
+    cpa = budget / total_conversions if total_conversions > 0 else 0
+    roas = revenue / budget if budget > 0 else 0
+
+    # KPI display
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("📢 Est. Reach", f"{reach:,.0f}")
+    k2.metric("🖱️ Est. Clicks", f"{clicks:,.0f}", f"CTR {bench['ctr']*plat['ctr']*100:.2f}%")
+    k3.metric("🛒 Est. Conversions", f"{total_conversions:,.0f}")
+    k4.metric("💵 Est. Revenue (₹)", f"₹{revenue:,.0f}")
+    k5.metric("📈 ROI", f"{roi:.1f}%", "ROAS {:.2f}x".format(roas))
+
+    col_vis1, col_vis2 = st.columns(2)
+
+    with col_vis1:
+        # Budget breakdown pie
+        fig, ax = plt.subplots(figsize=(5, 4))
+        bdg_labels = ['Influencer Commission', 'Retargeting Ads', 'Other (Production/Tools)']
+        bdg_vals = [content_budget, ad_budget, other_budget]
+        bdg_colors = [PALETTE[0], PALETTE[1], PALETTE[2]]
+        wedges, texts, autotexts = ax.pie(bdg_vals, labels=bdg_labels, autopct='%1.1f%%',
+                                           colors=bdg_colors, startangle=90,
+                                           wedgeprops={'edgecolor': '#0a0a0f', 'linewidth': 2})
+        for t in autotexts: t.set_fontsize(8)
+        ax.set_title(f'Budget Allocation\n(Total: ₹{budget:,})', fontweight='bold')
+        st.pyplot(fig, use_container_width=True)
+        plt.close()
+
+    with col_vis2:
+        # ROI vs Budget curve
+        budget_range = np.linspace(10000, max(budget * 2, 500000), 60)
+        roi_curve = []
+        for b in budget_range:
+            cb = b * commission_pct
+            ab = b * retargeting_pct
+            r = (cb / cpm_eff) * 1000 * plat['reach']
+            cl = r * bench['ctr'] * plat['ctr']
+            cv = cl * bench['cvr'] * (1 - funnel_dropoff)
+            rr = (ab / (cpm_eff * 0.6)) * 1000 if ab > 0 else 0
+            rc = rr * bench['ctr'] * 0.7 * bench['cvr'] * (1 - funnel_dropoff)
+            rev = (cv + rc) * aov
+            roi_curve.append(((rev - b) / b) * 100 if b > 0 else 0)
+
+        fig, ax = plt.subplots(figsize=(5, 4))
+        ax.plot(budget_range / 1000, roi_curve, '-', color=PALETTE[0], linewidth=2.5)
+        ax.axvline(budget / 1000, color=PALETTE[1], linestyle='--', linewidth=1.5,
+                   label=f'Your budget ₹{budget/1000:.0f}K')
+        ax.axhline(0, color='white', linewidth=1, alpha=0.4)
+        ax.fill_between(budget_range / 1000, roi_curve, 0,
+                        where=[r > 0 for r in roi_curve], alpha=0.12, color=PALETTE[2])
+        ax.set_xlabel('Budget (₹ thousands)')
+        ax.set_ylabel('Estimated ROI (%)')
+        ax.set_title('ROI vs Budget Curve', fontweight='bold')
+        ax.legend(fontsize=9)
+        st.pyplot(fig, use_container_width=True)
+        plt.close()
+
+    # Additional metrics
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.markdown(f"""
+        <div class="insight-box">
+          <div class="insight-title" style="color:{PALETTE[0]}">💡 Cost Per Acquisition</div>
+          <div class="insight-text">₹{cpa:,.2f} per conversion — {'✅ Efficient' if cpa < aov * 0.3 else '⚠️ High — reduce retargeting or switch influencer tier'}</div>
+        </div>
+        <div class="insight-box">
+          <div class="insight-title" style="color:{PALETTE[2]}">📊 ROAS</div>
+          <div class="insight-text">{roas:.2f}x — For every ₹1 spent, you earn ₹{roas:.2f} back in revenue. {'✅ Positive ROI' if roas > 1 else '❌ Below break-even — adjust budget mix'}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_m2:
+        st.markdown(f"""
+        <div class="insight-box">
+          <div class="insight-title" style="color:{PALETTE[3]}">🎯 Break-Even Point</div>
+          <div class="insight-text">Need at least {int(budget/aov)} conversions at AOV ₹{aov:,} to break even. Current estimate: {total_conversions:.0f} conversions.</div>
+        </div>
+        <div class="insight-box">
+          <div class="insight-title" style="color:{PALETTE[4]}">👥 Per Influencer Reach</div>
+          <div class="insight-text">~{reach/num_influencers:,.0f} people per influencer at ₹{content_budget/num_influencers:,.0f} budget each.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Scenario comparison table
+    st.markdown('<div class="section-head">📊 Scenario Comparison — 3 Strategy Options</div>', unsafe_allow_html=True)
+
+    scenarios = [
+        {"Name": "🎯 Micro-Influencer Heavy", "type": "Micro (10K–100K)", "platform": "Instagram Reels",
+         "commission": 0.60, "retargeting": 0.15, "n_inf": 10},
+        {"Name": "📺 Macro + YouTube", "type": "Macro (100K–1M)", "platform": "YouTube",
+         "commission": 0.55, "retargeting": 0.25, "n_inf": 2},
+        {"Name": "💥 Mega Brand Play", "type": "Mega (1M+)", "platform": "Instagram Reels",
+         "commission": 0.70, "retargeting": 0.10, "n_inf": 1},
+    ]
+
+    scen_rows = []
+    for sc in scenarios:
+        b_sc = BENCHMARKS[sc['type']]
+        p_sc = PLATFORM_MULTIPLIERS[sc['platform']]
+        cb_sc = budget * sc['commission']
+        ab_sc = budget * sc['retargeting']
+        cpm_sc = b_sc['cpm'] * p_sc['cpm_mult']
+        reach_sc = (cb_sc / cpm_sc) * 1000 * p_sc['reach']
+        clicks_sc = reach_sc * b_sc['ctr'] * p_sc['ctr']
+        conv_sc = clicks_sc * b_sc['cvr'] * (1 - funnel_dropoff)
+        rr_sc = (ab_sc / (cpm_sc * 0.6)) * 1000 if ab_sc > 0 else 0
+        rc_sc = rr_sc * b_sc['ctr'] * 0.7 * b_sc['cvr'] * (1 - funnel_dropoff)
+        total_conv_sc = conv_sc + rc_sc
+        rev_sc = total_conv_sc * aov
+        roi_sc = ((rev_sc - budget) / budget) * 100
+        cpa_sc = budget / total_conv_sc if total_conv_sc > 0 else 0
+
+        scen_rows.append({
+            'Strategy': sc['Name'],
+            'Influencer Type': sc['type'],
+            'Platform': sc['platform'],
+            '# Influencers': sc['n_inf'],
+            'Est. Reach': f"{reach_sc:,.0f}",
+            'Est. Conversions': f"{total_conv_sc:.0f}",
+            'Est. Revenue (₹)': f"₹{rev_sc:,.0f}",
+            'ROI (%)': f"{roi_sc:.1f}%",
+            'CPA (₹)': f"₹{cpa_sc:,.0f}",
+        })
+
+    scen_df = pd.DataFrame(scen_rows)
+    st.dataframe(scen_df, use_container_width=True)
+
+    # Best scenario highlight
+    best_sc = max(scenarios, key=lambda s: (
+        (budget * s['commission'] / (BENCHMARKS[s['type']]['cpm'] * PLATFORM_MULTIPLIERS[s['platform']]['cpm_mult'])) * 1000
+        * PLATFORM_MULTIPLIERS[s['platform']]['reach']
+        * BENCHMARKS[s['type']]['ctr'] * PLATFORM_MULTIPLIERS[s['platform']]['ctr']
+        * BENCHMARKS[s['type']]['cvr'] * (1 - funnel_dropoff) * aov
+    ))
+    st.success(f"🏆 **Recommended Strategy for ₹{budget:,} budget:** {best_sc['Name']} — maximizes estimated reach and conversion for this AOV and influencer mix.")
+
+
+# ═══════════════════════════════════════════════
+# TAB 10: TEXT ANALYTICS
+# ═══════════════════════════════════════════════
+with tabs[9]:
+    st.markdown('<div class="section-head">☁️ Text Analytics — Motivations, Content & Cross-Tabs</div>', unsafe_allow_html=True)
+    st.caption("Word clouds, chi-square significance tests, and cross-tabulation analysis of survey responses.")
+
+    ta_col1, ta_col2 = st.columns(2)
+
+    with ta_col1:
+        st.markdown("#### Purchase Motivation Word Cloud")
+        try:
+            from wordcloud import WordCloud
+            wc_text = ' '.join(filtered['purchase_motivation'].dropna().str.replace(';', ' '))
+            if wc_text.strip():
+                wc_bg = '#16161f'
+                wc = WordCloud(
+                    width=700, height=380, background_color=wc_bg,
+                    colormap='plasma', max_words=80,
+                    prefer_horizontal=0.85,
+                    collocations=False
+                ).generate(wc_text)
+                fig, ax = plt.subplots(figsize=(7, 4))
+                ax.imshow(wc, interpolation='bilinear')
+                ax.axis('off')
+                ax.set_title('Purchase Motivation Word Cloud', fontweight='bold', pad=10)
+                st.pyplot(fig, use_container_width=True)
+                plt.close()
+            else:
+                st.info("No motivation text data available in current filter.")
+        except ImportError:
+            st.warning("⚠️ `wordcloud` package not installed. Run: `pip install wordcloud`")
+
+    with ta_col2:
+        st.markdown("#### Content Type Word Cloud")
+        try:
+            from wordcloud import WordCloud
+            ct_text = ' '.join(filtered['content_type'].dropna().str.replace(';', ' ').str.replace('/', ' '))
+            if ct_text.strip():
+                wc2 = WordCloud(
+                    width=700, height=380, background_color='#16161f',
+                    colormap='cool', max_words=60, prefer_horizontal=0.8,
+                    collocations=False
+                ).generate(ct_text)
+                fig, ax = plt.subplots(figsize=(7, 4))
+                ax.imshow(wc2, interpolation='bilinear')
+                ax.axis('off')
+                ax.set_title('Content Type Word Cloud', fontweight='bold', pad=10)
+                st.pyplot(fig, use_container_width=True)
+                plt.close()
+        except ImportError:
+            pass
+
+    # Chi-square tests
+    st.markdown('<div class="section-head">🔬 Chi-Square Significance Tests</div>', unsafe_allow_html=True)
+    st.caption("Tests whether two categorical variables are statistically independent.")
+
+    from scipy.stats import chi2_contingency
+
+    chi_tests = [
+        ('Trust Factor', 'Made Purchase', 'trust_factor', 'made_purchase'),
+        ('Trust Factor', 'High Ad Responsive', 'trust_factor', 'high_ad_responsive'),
+        ('Age Group', 'Made Purchase', 'age_group', 'made_purchase'),
+        ('Gender', 'Made Purchase', 'gender', 'made_purchase'),
+        ('Preferred Ad Format', 'High Ad Responsive', 'preferred_ad_format', 'high_ad_responsive'),
+    ]
+
+    chi_results = []
+    for label_a, label_b, col_a, col_b in chi_tests:
+        try:
+            ct = pd.crosstab(filtered[col_a], filtered[col_b])
+            if ct.shape[0] >= 2 and ct.shape[1] >= 2:
+                chi2, p, dof, _ = chi2_contingency(ct)
+                n = filtered[[col_a, col_b]].dropna().shape[0]
+                cramers_v = np.sqrt(chi2 / (n * (min(ct.shape) - 1))) if n > 0 else 0
+                chi_results.append({
+                    'Variable A': label_a, 'Variable B': label_b,
+                    'Chi²': round(chi2, 3), 'df': dof,
+                    'p-value': round(p, 5),
+                    "Cramér's V": round(cramers_v, 3),
+                    'Significant?': '✅ Yes' if p < 0.05 else '❌ No',
+                    'Strength': 'Strong' if cramers_v > 0.3 else ('Moderate' if cramers_v > 0.15 else 'Weak')
+                })
+        except Exception:
+            pass
+
+    if chi_results:
+        chi_df = pd.DataFrame(chi_results)
+        st.dataframe(chi_df.style.applymap(
+            lambda v: 'color: #5cf0c8' if v == '✅ Yes' else ('color: #fc5c7d' if v == '❌ No' else ''),
+            subset=['Significant?']
+        ), use_container_width=True)
+
+        sig_pairs = [r for r in chi_results if r['Significant?'] == '✅ Yes']
+        if sig_pairs:
+            strongest = max(sig_pairs, key=lambda r: r["Cramér's V"])
+            cramers_val = strongest["Cramér's V"]
+            st.success(f"🏆 Strongest significant association: **{strongest['Variable A']} ↔ {strongest['Variable B']}** "
+                       f"(Cramér's V = {cramers_val:.3f}, p = {strongest['p-value']:.5f})")
+
+    else:
+        st.info("Not enough data for chi-square tests. Widen filters.")
+
+    # Cross-tab heatmaps
+    st.markdown('<div class="section-head">🗂️ Cross-Tabulation Heatmaps</div>', unsafe_allow_html=True)
+
+    xt_col1, xt_col2 = st.columns(2)
+
+    with xt_col1:
+        st.markdown("**Age Group × Preferred Content Type**")
+        try:
+            # Explode multi-select content types
+            ct_exploded = filtered[['age_group', 'content_type']].dropna()
+            ct_exploded = ct_exploded.assign(
+                content_type=ct_exploded['content_type'].str.split(';')
+            ).explode('content_type')
+            ct_exploded['content_type'] = ct_exploded['content_type'].str.strip()
+            ct_exploded = ct_exploded[ct_exploded['content_type'] != '']
+            xt1 = pd.crosstab(ct_exploded['age_group'], ct_exploded['content_type'])
+            if not xt1.empty:
+                fig, ax = plt.subplots(figsize=(8, 5))
+                sns.heatmap(xt1, annot=True, fmt='d', cmap='YlOrRd', ax=ax,
+                            linewidths=0.5, linecolor='#0a0a0f', annot_kws={'size': 8})
+                ax.set_title('Age Group × Content Type\n(respondent count)', fontweight='bold')
+                plt.xticks(rotation=35, ha='right', fontsize=8)
+                plt.yticks(fontsize=8)
+                plt.tight_layout()
+                st.pyplot(fig, use_container_width=True)
+                plt.close()
+        except Exception as e:
+            st.info(f"Could not render cross-tab: {e}")
+
+    with xt_col2:
+        st.markdown("**Trust Factor × Purchase Motivation**")
+        try:
+            motiv_exploded = filtered[['trust_factor', 'purchase_motivation']].dropna()
+            motiv_exploded = motiv_exploded.assign(
+                purchase_motivation=motiv_exploded['purchase_motivation'].str.split(';')
+            ).explode('purchase_motivation')
+            motiv_exploded['purchase_motivation'] = motiv_exploded['purchase_motivation'].str.strip()
+            motiv_exploded = motiv_exploded[motiv_exploded['purchase_motivation'] != '']
+            xt2 = pd.crosstab(motiv_exploded['trust_factor'], motiv_exploded['purchase_motivation'])
+            if not xt2.empty:
+                fig, ax = plt.subplots(figsize=(8, 5))
+                sns.heatmap(xt2, annot=True, fmt='d', cmap='Blues', ax=ax,
+                            linewidths=0.5, linecolor='#0a0a0f', annot_kws={'size': 8})
+                ax.set_title('Trust Factor × Purchase Motivation\n(co-occurrence count)', fontweight='bold')
+                plt.xticks(rotation=35, ha='right', fontsize=8)
+                plt.yticks(fontsize=8)
+                plt.tight_layout()
+                st.pyplot(fig, use_container_width=True)
+                plt.close()
+        except Exception as e:
+            st.info(f"Could not render cross-tab: {e}")
+
+    # Motivation frequency bar race
+    st.markdown('<div class="section-head">📊 Motivation Frequency by Age Group</div>', unsafe_allow_html=True)
+    try:
+        motiv_age = filtered[['age_group', 'purchase_motivation']].dropna()
+        motiv_age = motiv_age.assign(
+            purchase_motivation=motiv_age['purchase_motivation'].str.split(';')
+        ).explode('purchase_motivation')
+        motiv_age['purchase_motivation'] = motiv_age['purchase_motivation'].str.strip()
+        motiv_age = motiv_age[motiv_age['purchase_motivation'] != '']
+        motiv_pivot = pd.crosstab(motiv_age['purchase_motivation'], motiv_age['age_group'])
+        if not motiv_pivot.empty and motiv_pivot.shape[1] >= 2:
+            fig, ax = plt.subplots(figsize=(12, 5))
+            motiv_pivot.plot(kind='bar', ax=ax, color=PALETTE[:motiv_pivot.shape[1]],
+                             edgecolor='#0a0a0f', alpha=0.88)
+            ax.set_title('Purchase Motivations by Age Group', fontweight='bold')
+            ax.set_ylabel('Respondent Count')
+            ax.set_xlabel('')
+            plt.xticks(rotation=30, ha='right', fontsize=9)
+            ax.legend(title='Age Group', bbox_to_anchor=(1.01, 1), fontsize=9)
+            plt.tight_layout()
+            st.pyplot(fig, use_container_width=True)
+            plt.close()
+    except Exception:
+        pass
+
+
+# ═══════════════════════════════════════════════
+# TAB 11: EXPORT & PDF REPORT
+# ═══════════════════════════════════════════════
+with tabs[10]:
+    st.markdown('<div class="section-head">📥 Export Data & Generate PDF Report</div>', unsafe_allow_html=True)
+    st.caption("Download filtered data as CSV or generate an auto-formatted PDF summary report.")
+
+    exp_col1, exp_col2 = st.columns(2)
+
+    with exp_col1:
+        st.markdown("#### 📁 CSV Data Export")
+        # Columns to export
+        export_cols = [c for c in ['age_group', 'gender', 'spending', 'platforms', 'daily_time',
+                                    'follows_influencers', 'trust_factor', 'engagement_freq',
+                                    'product_interest_score', 'purchase_freq', 'satisfaction_score',
+                                    'ad_click_freq', 'ad_influenced', 'retargeting_score',
+                                    'preferred_ad_format', 'purchase_ord', 'engagement_ord',
+                                    'spending_ord', 'made_purchase', 'high_ad_responsive'] if c in filtered.columns]
+        export_df = filtered[export_cols].copy()
+
+        csv_data = export_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="⬇️ Download Filtered Dataset (CSV)",
+            data=csv_data,
+            file_name=f"influence_crew_filtered_{n_filtered}respondents.csv",
+            mime='text/csv',
+            use_container_width=True
+        )
+        st.caption(f"Exporting {n_filtered} respondents × {len(export_cols)} columns")
+
+        # Export summary stats
+        summary_stats = export_df.describe().round(3)
+        summary_csv = summary_stats.to_csv().encode('utf-8')
+        st.download_button(
+            label="⬇️ Download Summary Statistics (CSV)",
+            data=summary_csv,
+            file_name="influence_crew_summary_stats.csv",
+            mime='text/csv',
+            use_container_width=True
+        )
+
+        # Export correlation matrix
+        num_export_cols = [c for c in ['spending_ord', 'daily_time_ord', 'engagement_ord',
+                                        'product_interest_score', 'purchase_ord', 'satisfaction_score',
+                                        'ad_click_ord', 'retargeting_score'] if c in filtered.columns]
+        if len(num_export_cols) >= 2:
+            corr_export = filtered[num_export_cols].corr(method='spearman').round(3)
+            corr_csv = corr_export.to_csv().encode('utf-8')
+            st.download_button(
+                label="⬇️ Download Correlation Matrix (CSV)",
+                data=corr_csv,
+                file_name="influence_crew_correlation_matrix.csv",
+                mime='text/csv',
+                use_container_width=True
+            )
+
+    with exp_col2:
+        st.markdown("#### 📄 PDF Report Generator")
+
+        if st.button("🖨️ Generate PDF Report", use_container_width=True, type="primary"):
+            try:
+                from fpdf import FPDF
+
+                class ReportPDF(FPDF):
+                    def header(self):
+                        self.set_font('Helvetica', 'B', 14)
+                        self.set_text_color(124, 92, 252)
+                        self.cell(0, 10, 'The Influence Crew - Business Analytics Report', align='C', new_x='LMARGIN', new_y='NEXT')
+                        self.set_font('Helvetica', '', 9)
+                        self.set_text_color(120, 120, 160)
+                        self.cell(0, 7, 'Group 5 | Survey n=210 | Dec 2025', align='C', new_x='LMARGIN', new_y='NEXT')
+
+                        self.ln(3)
+
+                    def footer(self):
+                        self.set_y(-15)
+                        self.set_font('Helvetica', 'I', 8)
+                        self.set_text_color(150, 150, 180)
+                        self.cell(0, 10, f'Page {self.page_no()}', align='C')
+
+                    def _clean(self, text):
+                        if not text: return ""
+                        return str(text).replace('—', '-').replace('→', '->').replace('≥', '>=').replace('≤', '<=').replace('₹', 'Rs.').replace('✓', 'V ').replace('·', '*').replace('â', 'a').replace('€', 'E')
+
+
+                    def section(self, title):
+                        self.set_font('Helvetica', 'B', 11)
+                        self.set_text_color(124, 92, 252)
+                        self.cell(0, 8, self._clean(title), new_x='LMARGIN', new_y='NEXT')
+                        self.set_draw_color(124, 92, 252)
+                        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+                        self.ln(3)
+                        self.set_text_color(30, 30, 30)
+
+                    def kpi_row(self, label, value, note=''):
+                        self.set_font('Helvetica', 'B', 10)
+                        self.set_text_color(30, 30, 30)
+                        self.cell(70, 7, self._clean(label) + ':', new_x='RIGHT', new_y='LAST')
+                        self.set_font('Helvetica', '', 10)
+                        self.cell(60, 7, self._clean(value), new_x='RIGHT', new_y='LAST')
+                        self.set_font('Helvetica', 'I', 9)
+                        self.set_text_color(100, 100, 140)
+                        self.cell(0, 7, self._clean(note), new_x='LMARGIN', new_y='NEXT')
+                        self.set_text_color(30, 30, 30)
+
+
+                pdf = ReportPDF()
+                pdf.set_auto_page_break(auto=True, margin=15)
+                pdf.add_page()
+
+                # ── Cover info ──
+                pdf.section("1. Dataset & Filter Summary")
+                pdf.kpi_row("Total Respondents (Filtered)", str(n_filtered), f"of 210 total")
+                pdf.kpi_row("Purchase Rate", f"{purchase_rate:.1f}%", "made ≥1 influencer-driven purchase")
+                avg_interest_pdf = filtered['product_interest_score'].mean() if n_filtered > 0 else 0
+                avg_sat_pdf = filtered['satisfaction_score'].mean() if n_filtered > 0 else 0
+                pdf.kpi_row("Avg Product Interest Score", f"{avg_interest_pdf:.2f}/5")
+                pdf.kpi_row("Avg Satisfaction Score", f"{avg_sat_pdf:.2f}/5")
+                pdf.kpi_row("Ad Responsiveness Rate", f"{ad_responsive_rate:.1f}%", "click ads sometimes or more")
+                top_trust_pdf = filtered['trust_factor'].value_counts().index[0] if n_filtered > 0 else 'N/A'
+                pdf.kpi_row("Top Trust Driver", top_trust_pdf)
+                top_plat_pdf = max(['Instagram','YouTube','Pinterest','Snapchat','Facebook'],
+                                   key=lambda p: filtered[f'platform_{p.lower()}'].sum() if f'platform_{p.lower()}' in filtered.columns else 0)
+                pdf.kpi_row("Most Used Platform", top_plat_pdf)
+                pdf.ln(4)
+
+                # ── Correlation insights ──
+                pdf.section("2. Top Correlation Insights (Spearman, vs Purchase Frequency)")
+                num_pdf = [c for c in ['spending_ord','daily_time_ord','engagement_ord','product_interest_score',
+                                        'satisfaction_score','ad_click_ord','retargeting_score'] if c in filtered.columns]
+                label_pdf = {'spending_ord':'Monthly Spending','daily_time_ord':'Daily Time',
+                             'engagement_ord':'Engagement','product_interest_score':'Product Interest',
+                             'satisfaction_score':'Satisfaction','ad_click_ord':'Ad Clicks',
+                             'retargeting_score':'Retargeting Receptivity'}
+                if 'purchase_ord' in filtered.columns and len(num_pdf) >= 2:
+                    for col_p in num_pdf:
+                        try:
+                            from scipy.stats import spearmanr as spr
+                            rho_p, pv_p = spr(filtered[col_p].dropna(), filtered.loc[filtered[col_p].notna(), 'purchase_ord'])
+                            sig = "✓ Sig." if pv_p < 0.05 else ""
+                            pdf.kpi_row(label_pdf.get(col_p, col_p), f"ρ = {rho_p:.3f}  (p={pv_p:.4f})", sig)
+                        except Exception:
+                            pass
+                pdf.ln(4)
+
+                # ── Association rules ──
+                pdf.section("3. Top Association Rules (→ Made Purchase)")
+                pdf.set_font('Helvetica', '', 9)
+                try:
+                    pdf.cell(55, 7, 'Antecedent', border=1, new_x='RIGHT', new_y='LAST')
+                    pdf.cell(30, 7, 'Support', border=1, new_x='RIGHT', new_y='LAST')
+                    pdf.cell(32, 7, 'Confidence', border=1, new_x='RIGHT', new_y='LAST')
+                    pdf.cell(30, 7, 'Lift', border=1, new_x='LMARGIN', new_y='NEXT')
+                    t_df_pdf = pd.DataFrame({
+                        'High_Engagement': (filtered['engagement_ord'] >= 2).astype(int),
+                        'ContentQuality_Trust': (filtered['trust_factor'] == 'Content quality').astype(int),
+                        'High_Interest': (filtered['product_interest_score'] >= 4).astype(int),
+                        'High_Satisfaction': (filtered['satisfaction_score'] >= 4).astype(int),
+                        'Made_Purchase': (filtered['purchase_ord'] > 0).astype(int),
+                        'High_TimeSpent': (filtered['daily_time_ord'] >= 3).astype(int),
+                    }).fillna(0).astype(int)
+                    def _rules_pdf(df_t, ants, cons, ms=0.06, mc=0.45):
+                        n_r = len(df_t); rules_r = []; cr = df_t[cons].sum()/n_r
+                        for col_r in ants:
+                            if col_r == cons: continue
+                            ant_r = df_t[col_r]; both_r = (ant_r==1)&(df_t[cons]==1)
+                            sup_r = both_r.sum()/n_r
+                            if sup_r < ms or ant_r.sum()==0: continue
+                            conf_r = both_r.sum()/ant_r.sum()
+                            if conf_r < mc: continue
+                            lift_r = conf_r/cr if cr>0 else 0
+                            rules_r.append({'A': col_r, 'Sup': round(sup_r,3), 'Conf': round(conf_r,3), 'Lift': round(lift_r,3)})
+                        return sorted(rules_r, key=lambda x: -x['Lift'])
+                    ants_pdf = [c for c in t_df_pdf.columns if c != 'Made_Purchase']
+                    top_rules_pdf = _rules_pdf(t_df_pdf, ants_pdf, 'Made_Purchase')[:6]
+                    for rr in top_rules_pdf:
+                        pdf.cell(55, 6, rr['A'][:28], border=1, new_x='RIGHT', new_y='LAST')
+                        pdf.cell(30, 6, str(rr['Sup']), border=1, new_x='RIGHT', new_y='LAST')
+                        pdf.cell(32, 6, str(rr['Conf']), border=1, new_x='RIGHT', new_y='LAST')
+                        pdf.cell(30, 6, str(rr['Lift']), border=1, new_x='LMARGIN', new_y='NEXT')
+                except Exception:
+                    pdf.cell(0, 7, "Rules unavailable for current filter.", new_x='LMARGIN', new_y='NEXT')
+                pdf.ln(4)
+
+                # ── Recommendations ──
+                pdf.section("4. Strategic Recommendations")
+                rec_texts = [
+                    ("01 - Influencer Selection", "Prioritise content quality over follower count. Top trust driver: " + top_trust_pdf),
+                    ("02 - Campaign Design", f"Reels-first strategy: {reels_pct:.1f}% prefer Reels as most influential ad format."),
+                    ("03 - Conversion Optimization", "Combine authentic reviews (70%) with unique coupon codes (30%) per influencer brief."),
+                    ("04 - Ad Budget Strategy", f"Cap retargeting at 3-4 impressions/user/week. {100-ad_responsive_rate:.1f}% rarely/never click ads."),
+                    ("05 - Risk Mitigation", "Implement Engagement Quality Score (EQS) = (Comments+Saves)/Reach. Require EQS >= 2%."),
+                ]
+
+                for rtitle, rdesc in rec_texts:
+                    pdf.set_font('Helvetica', 'B', 10)
+                    pdf.set_text_color(124, 92, 252)
+                    pdf.cell(0, 7, rtitle, new_x='LMARGIN', new_y='NEXT')
+                    pdf.set_font('Helvetica', '', 9)
+                    pdf.set_text_color(40, 40, 60)
+                    pdf.multi_cell(0, 6, rdesc)
+                    pdf.ln(2)
+
+                pdf_bytes = bytes(pdf.output())
+                st.download_button(
+                    label="⬇️ Download PDF Report",
+                    data=pdf_bytes,
+                    file_name="TheInfluenceCrew_Analytics_Report.pdf",
+                    mime='application/pdf',
+                    use_container_width=True,
+                )
+                st.success("✅ PDF generated successfully! Click above to download.")
+
+            except ImportError:
+                st.error("⚠️ `fpdf2` not installed. Run: `pip install fpdf2`")
+            except Exception as ex:
+                st.error(f"PDF generation error: {ex}")
+
+    # Preview section
+    st.markdown('<div class="section-head">👁️ Filtered Data Preview</div>', unsafe_allow_html=True)
+    preview_cols = [c for c in ['age_group', 'gender', 'spending', 'trust_factor',
+                                 'purchase_freq', 'engagement_freq', 'preferred_ad_format',
+                                 'satisfaction_score', 'made_purchase'] if c in filtered.columns]
+    st.dataframe(filtered[preview_cols].head(50).style.background_gradient(
+        cmap='plasma', subset=[c for c in ['satisfaction_score'] if c in preview_cols]),
+        use_container_width=True)
+    st.caption(f"Showing first 50 of {n_filtered} filtered respondents.")
+
+
 # TAB 6: RECOMMENDATIONS
 # ═══════════════════════════════════════════════
 with tabs[6]:
