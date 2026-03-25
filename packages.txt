@@ -1,7 +1,5 @@
-# System-level dependencies for Streamlit Cloud (Linux)
-# Required for wordcloud, fpdf2, and general image processing
-
 libgl1
-freefont-fcp
+fonts-freefont-ttf
+libfontconfig1
 build-essential
 python3-dev
